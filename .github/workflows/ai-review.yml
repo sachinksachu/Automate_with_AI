@@ -1,0 +1,38 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Save PR diff
+        run: git diff origin/${{ github.base_ref }}...HEAD > pr.diff
+
+      - name: Gemini review
+        id: gemini
+        uses: google-github-actions/run-gemini-cli@v0
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
+          prompt: |
+            You are a senior code reviewer. Read the file pr.diff, which is the
+            diff of this pull request. Review it for bugs, broken HTML, security
+            issues, accessibility problems, and readability. Reply in markdown:
+            a 2-line summary, then a list of issues with file names and
+            suggested fixes. If everything looks fine, say so briefly.
+
+      - name: Post review as PR comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVIEW: ${{ steps.gemini.outputs.summary }}
+        run: gh pr comment ${{ github.event.pull_request.number }} --body "$REVIEW"
