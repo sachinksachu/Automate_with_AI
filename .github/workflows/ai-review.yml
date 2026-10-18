@@ -20,21 +20,34 @@ jobs:
         run: git diff origin/${{ github.base_ref }}...HEAD > pr.diff
 
       - name: Gemini review
-        id: gemini
-        uses: google-github-actions/run-gemini-cli@v0
         env:
-          GEMINI_CLI_TRUST_WORKSPACE: "true"
-        with:
-          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
-          prompt: |
-            You are a senior code reviewer. Read the file pr.diff, which is the
-            diff of this pull request. Review it for bugs, broken HTML, security
-            issues, accessibility problems, and readability. Reply in markdown:
-            a 2-line summary, then a list of issues with file names and
-            suggested fixes. If everything looks fine, say so briefly.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          MODEL: gemini-3.5-flash-lite
+        run: |
+          head -c 100000 pr.diff > diff.txt
+
+          jq -n --rawfile diff diff.txt '{
+            contents: [{
+              parts: [{
+                text: ("You are a senior code reviewer. Review this pull request diff for bugs, broken HTML, security issues, accessibility problems and readability. Reply in markdown: a 2-line summary, then a list of issues with file names and suggested fixes. If all is fine, say so briefly.\n\n" + $diff)
+              }]
+            }]
+          }' > req.json
+
+          curl -sS -X POST "https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent" \
+            -H "x-goog-api-key: $GEMINI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @req.json > resp.json || true
+
+          jq -r '.candidates[0].content.parts[0].text // empty' resp.json > review.md
+
+          if [ ! -s review.md ]; then
+            echo "Gemini returned no review. API response:"
+            cat resp.json
+            echo "AI review unavailable (quota or API error). Please review manually." > review.md
+          fi
 
       - name: Post review as PR comment
         env:
           GH_TOKEN: ${{ github.token }}
-          REVIEW: ${{ steps.gemini.outputs.summary }}
-        run: gh pr comment ${{ github.event.pull_request.number }} --body "$REVIEW"
+        run: gh pr comment ${{ github.event.pull_request.number }} --body-file review.md
