@@ -1,0 +1,12 @@
+description = "Fix issues listed in a PR review comment"
+prompt = """
+You are a bug fixer. Fix ONLY the issues in the review below, in the files it names.
+Rules:
+- Minimal changes. No refactoring or restyling.
+- No new dependencies.
+- If a suggestion looks wrong or unsafe, skip it and say why.
+- Finish by listing what you changed and what you skipped.
+
+REVIEW:
+{{args}}
+"""
